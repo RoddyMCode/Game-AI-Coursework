@@ -1,19 +1,50 @@
+﻿using System.Data;
 using UnityEngine;
-
+using UnityEngine.SocialPlatforms.Impl;
+public enum AllyRole
+{
+    leader,
+    baseTroop,
+    
+}
 public class AllyAgent : SteeringAgent
 {
 	private Attack.AttackType attackType = Attack.AttackType.AllyGun;
 
-	protected override void InitialiseFromAwake()
+	public AllyRole allyRole;
+
+  
+
+    protected override void InitialiseFromAwake()
 	{
-		gameObject.AddComponent<SeekToMouse>();
+
+      
+		 gameObject.AddComponent<SeekToMouse>();
+        //  followPosition = leader.position − leader.forward* followDistance;
+        CreateNewLeader();
+
+    }
+    private void Update()
+    {
+        if(allyRole == AllyRole.baseTroop)
+		{
+
+		}
+		else if (allyRole == AllyRole.leader)
+		{
+
+		}
 	}
 
-	protected override void CooperativeArbitration()
+    protected override void CooperativeArbitration()
 	{
 		base.CooperativeArbitration();
 
-		if (Input.GetKeyDown(KeyCode.Alpha1))
+       
+
+
+
+        if (Input.GetKeyDown(KeyCode.Alpha1))
 		{
 			attackType = Attack.AttackType.Melee;
 		}
@@ -56,4 +87,19 @@ public class AllyAgent : SteeringAgent
 			transform.up = Vector3.Normalize(mouseInWorld - transform.position);
 		}
 	}
+	void CreateNewLeader() 
+	{
+		
+		if (AllyAgentGroupManager.leader == null) 
+		{
+			AllyAgentGroupManager.leader = this;
+            allyRole = AllyRole.leader;		// made a static manager to handle who the leader also made tags so i can debug better
+			}
+			else
+			{
+            allyRole = AllyRole.baseTroop;
+			}
+
+		}
+
 }
