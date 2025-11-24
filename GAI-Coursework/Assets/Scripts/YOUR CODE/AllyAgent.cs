@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SocialPlatforms.Impl;
 public enum AllyRole
@@ -13,35 +14,55 @@ public class AllyAgent : SteeringAgent
 
 	public AllyRole allyRole;
 
-  
+
+    private SeekBehaviour seekScript;
+    //public WanderBehaviour wanderScript;
+    //  public AvoidanceBehaviour avoidScript;
+
+    private SeekToMouse seekToMouse;
 
     protected override void InitialiseFromAwake()
 	{
+		allyRole = AllyRole.baseTroop;
 
-      
-		 gameObject.AddComponent<SeekToMouse>();
-        //  followPosition = leader.position − leader.forward* followDistance;
-        CreateNewLeader();
+        seekScript = GetComponent<SeekBehaviour>();
+		if (seekScript == null)
+        {
+            seekScript = gameObject.AddComponent<SeekBehaviour>();
+        }
+
+        seekScript.enabled = false;
+
+		gameObject.AddComponent<SeekToMouse>();
+
+       
+        if (seekToMouse == null)
+        {
+		seekToMouse = gameObject.AddComponent<SeekToMouse>();
+
+        seekToMouse.enabled = false; 
+		}
+		//  followPosition = leader.position − leader.forward* followDistance;
+    CreateNewLeader();
 
     }
-    private void Update()
-    {
-        if(allyRole == AllyRole.baseTroop)
-		{
-
-		}
-		else if (allyRole == AllyRole.leader)
-		{
-
-		}
-	}
 
     protected override void CooperativeArbitration()
 	{
 		base.CooperativeArbitration();
 
-       
 
+        SteeringVelocity = Vector3.zero;
+
+        if (allyRole == AllyRole.baseTroop)
+        {
+            if (seekScript != null)
+            {
+                seekScript.Target = AllyAgentGroupManager.leader.transform;
+                SteeringVelocity += seekScript.GetSteering();
+            }
+        }
+    
 
 
         if (Input.GetKeyDown(KeyCode.Alpha1))
@@ -69,14 +90,19 @@ public class AllyAgent : SteeringAgent
 		{
 			SteeringVelocity = Vector3.zero;
 			CurrentVelocity = Vector3.zero;
-			var seekToMouse = GetComponent<SeekToMouse>();
-			seekToMouse.enabled = !seekToMouse.enabled;
+
+			if (seekToMouse != null)
+			{
+				seekToMouse.enabled = !seekToMouse.enabled;
+			}
 		}
 	}
 
 	protected override void UpdateDirection()
 	{
-		if (GetComponent<SeekToMouse>().enabled)
+        var seekToMouse = GetComponent<SeekToMouse>();
+
+        if (GetComponent<SeekToMouse>().enabled && seekToMouse != null)
 		{
 			base.UpdateDirection();
 		}
