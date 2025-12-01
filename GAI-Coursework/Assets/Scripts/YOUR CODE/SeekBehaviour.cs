@@ -1,16 +1,28 @@
 using UnityEngine;
 
-public class SeekBehaviour : MonoBehaviour
+public class SeekBehaviour : SteeringBehaviour
 {
     public Transform Target;
-    public float speed = 5f;
 
-    public Vector3 GetSteering()
+    public override Vector3 UpdateBehaviour(SteeringAgent agent)
     {
         if (Target == null)
-            return Vector3.zero;
+        {
+            steeringVelocity = Vector3.zero;
+            return steeringVelocity;
+        }
 
-        Vector3 dir = (Target.position - transform.position).normalized;
-        return dir * speed;
+
+        // Compute desired velocity
+        Vector3 direction = (Target.position - transform.position);
+        direction.z = 0f;
+
+        float maxSpeed = SteeringAgent.GetMaxSpeedAllowed(agent);
+        desiredVelocity = direction.normalized * maxSpeed;
+
+        // Compute steering velocity
+        steeringVelocity = desiredVelocity - agent.CurrentVelocity;
+
+        return steeringVelocity;
     }
 }

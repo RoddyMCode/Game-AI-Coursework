@@ -10,122 +10,152 @@ public enum AllyRole
 }
 public class AllyAgent : SteeringAgent
 {
-	private Attack.AttackType attackType = Attack.AttackType.AllyGun;
+    private Attack.AttackType attackType = Attack.AttackType.AllyGun;
 
-	public AllyRole allyRole;
+    public AllyRole allyRole;
 
 
     private SeekBehaviour seekScript;
-    //public WanderBehaviour wanderScript;
-    //  public AvoidanceBehaviour avoidScript;
+    public WanderBehaviour wanderScript;
+    public AvoidanceBehaviour avoidScript;
 
-    private SeekToMouse seekToMouse;
+  
 
     protected override void InitialiseFromAwake()
-	{
-		allyRole = AllyRole.baseTroop;
+    {
+        allyRole = AllyRole.baseTroop;
 
         seekScript = GetComponent<SeekBehaviour>();
-		if (seekScript == null)
+        if (wanderScript == null)
+        {
+            wanderScript = gameObject.AddComponent<WanderBehaviour>();
+        }
+        if (avoidScript == null)
+        {
+            avoidScript = gameObject.AddComponent<AvoidanceBehaviour>();
+        }
+        if (seekScript == null)
         {
             seekScript = gameObject.AddComponent<SeekBehaviour>();
         }
 
         seekScript.enabled = false;
+        wanderScript.enabled = false;
+        avoidScript.enabled = true;
+                
 
-		gameObject.AddComponent<SeekToMouse>();
-
-       
-        if (seekToMouse == null)
-        {
-		seekToMouse = gameObject.AddComponent<SeekToMouse>();
-
-        seekToMouse.enabled = false; 
-		}
-		//  followPosition = leader.position − leader.forward* followDistance;
-    CreateNewLeader();
+        CreateNewLeader();
 
     }
 
     protected override void CooperativeArbitration()
-	{
-		base.CooperativeArbitration();
+    {
+        base.CooperativeArbitration();
 
 
-        SteeringVelocity = Vector3.zero;
+        CreateNewLeader();
+        UpdateAllBaseTroopsTarget();
+
 
         if (allyRole == AllyRole.baseTroop)
         {
-            if (seekScript != null)
-            {
-                seekScript.Target = AllyAgentGroupManager.leader.transform;
-                SteeringVelocity += seekScript.GetSteering();
-            }
+            // Follow the leader
+            seekScript.Target = AllyAgentGroupManager.leader.transform;
+            seekScript.enabled = true;
+
+            // Only use avoidance if necessary
+            avoidScript.enabled = true;
+
+            // Disable wander for baseTroops
+            wanderScript.enabled = false;
         }
-    
+        else if (allyRole == AllyRole.leader)
+        {
+            // Leader moves around randomly or along path
+            wanderScript.enabled = true;
+            seekScript.enabled = false;
+            avoidScript.enabled = false;
+        }
 
 
         if (Input.GetKeyDown(KeyCode.Alpha1))
-		{
-			attackType = Attack.AttackType.Melee;
-		}
-		if (Input.GetKeyDown(KeyCode.Alpha2))
-		{
-			attackType = Attack.AttackType.AllyGun;
-		}
-		if (Input.GetKeyDown(KeyCode.Alpha3))
-		{
-			attackType = Attack.AttackType.Rocket;
-		}
-		if (Input.GetKey(KeyCode.Space))
-		{
-			if(attackType == Attack.AttackType.Rocket && GameData.Instance.AllyRocketsAvailable <= 0)
-			{
-				attackType = Attack.AttackType.AllyGun;
-			}
+        {
+            attackType = Attack.AttackType.Melee;
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            attackType = Attack.AttackType.AllyGun;
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            attackType = Attack.AttackType.Rocket;
+        }
+        if (Input.GetKey(KeyCode.Space))
+        {
+            if (attackType == Attack.AttackType.Rocket && GameData.Instance.AllyRocketsAvailable <= 0)
+            {
+                attackType = Attack.AttackType.AllyGun;
+            }
 
-			AttackWith(attackType);
-		}
-		if(Input.GetMouseButtonDown(1))
-		{
-			SteeringVelocity = Vector3.zero;
-			CurrentVelocity = Vector3.zero;
+            AttackWith(attackType);
+        }
+        if (Input.GetMouseButtonDown(1))
+        {
+            SteeringVelocity = Vector3.zero;
+            CurrentVelocity = Vector3.zero;
 
-			if (seekToMouse != null)
-			{
-				seekToMouse.enabled = !seekToMouse.enabled;
-			}
-		}
-	}
+              
+        }
+    }
 
-	protected override void UpdateDirection()
-	{
-        var seekToMouse = GetComponent<SeekToMouse>();
+    protected override void UpdateDirection()
+    {
+       // var seekToMouse = GetComponent<SeekToMouse>();
 
-        if (GetComponent<SeekToMouse>().enabled && seekToMouse != null)
-		{
-			base.UpdateDirection();
-		}
-		else
-		{
-			var mouseInWorld = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-			mouseInWorld.z = 0.0f;
-			transform.up = Vector3.Normalize(mouseInWorld - transform.position);
-		}
-	}
-	void CreateNewLeader() 
-	{
-		
-		if (AllyAgentGroupManager.leader == null) 
-		{
-			AllyAgentGroupManager.leader = this;
-            allyRole = AllyRole.leader;		// made a static manager to handle who the leader also made tags so i can debug better
-			}
-			else
-			{
-            allyRole = AllyRole.baseTroop;
-			}
+            base.UpdateDirection();
+       
+    }
+    void CreateNewLeader()
+    {
+        // If there is no leader or the leader is inactive
+        if (AllyAgentGroupManager.leader == null || !AllyAgentGroupManager.leader.gameObject.activeInHierarchy)
+        {
+            if (allyRole != AllyRole.leader)
+            {
+                AllyAgentGroupManager.leader = this;
+                allyRole = AllyRole.leader;
 
-		}
+
+                // Enable leader behaviors
+                gameObject.AddComponent<SeekToMouse>();
+                wanderScript.enabled = true;
+                seekScript.enabled = false;
+                avoidScript.enabled = false;
+            }
+        }
+        else
+        {
+            // Only set to baseTroop if you are not the leader
+            if (allyRole != AllyRole.leader)
+            {
+                allyRole = AllyRole.baseTroop;
+                wanderScript.enabled = false;
+                seekScript.enabled = true;
+                avoidScript.enabled = true;
+               
+              
+            }
+        }
+    }
+    void UpdateAllBaseTroopsTarget()
+    {
+        foreach (var ally in AllyAgentGroupManager.allAllies)
+        {
+            if (ally != null && ally != this && ally.allyRole == AllyRole.baseTroop)
+            {
+                ally.seekScript.Target = this.transform;
+            }
+        }
+    }
 
 }
