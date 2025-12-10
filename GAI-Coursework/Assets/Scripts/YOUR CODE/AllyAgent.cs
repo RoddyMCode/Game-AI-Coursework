@@ -1,161 +1,297 @@
-﻿using System.Data;
+﻿using System.Collections.Generic;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SocialPlatforms.Impl;
-public enum AllyRole
+
+public enum AllyRole            // leaders will seek to random location using a* whilst base troops just seek to leader
 {
     leader,
     baseTroop,
-    
 }
+    public enum AgentState      // tells troops to change state
+    {
+        Normal,
+        Combat
+    }
 public class AllyAgent : SteeringAgent
 {
-    private Attack.AttackType attackType = Attack.AttackType.AllyGun;
+    private Attack.AttackType basicShoot = Attack.AttackType.AllyGun;
 
     public AllyRole allyRole;
 
+    public float attackRange = 7f;
+    public SteeringAgent currentTarget;
 
-    private SeekBehaviour seekScript;
-    public WanderBehaviour wanderScript;
-    public AvoidanceBehaviour avoidScript;
 
+    public float detectionRange = 10f;
+
+    private SeekToMouse seekToMouse;
+    private SeekBehaviour seekScript;       // used to steer to targets
+
+    private AvoidanceBehaviour avoidanceScript;         // used to avoid overlapping allys
+    public SeparationBehaviour separationScript;        // used to seperate while traversing the map
   
 
+    private AllyPathfinding pathfinder;             // A* pathfinding used to find fasted path for the leader
+    private List<int> currentPath;
+    private int currentWaypoint = 0;
+    private int attemptsAtRandomNode = 20; //number of tries a leader gets before dying to find a node with A*
+
+
+
+    public AgentState currentState = AgentState.Normal;
+        
     protected override void InitialiseFromAwake()
     {
         allyRole = AllyRole.baseTroop;
 
-        seekScript = GetComponent<SeekBehaviour>();
-        if (wanderScript == null)
-        {
-            wanderScript = gameObject.AddComponent<WanderBehaviour>();
-        }
-        if (avoidScript == null)
-        {
-            avoidScript = gameObject.AddComponent<AvoidanceBehaviour>();
-        }
+       
+        pathfinder = gameObject.AddComponent<AllyPathfinding>();
+        pathfinder.Initialise(GameData.Instance.Map);
+
         if (seekScript == null)
         {
             seekScript = gameObject.AddComponent<SeekBehaviour>();
         }
 
-        seekScript.enabled = false;
-        wanderScript.enabled = false;
-        avoidScript.enabled = true;
-                
+        if (separationScript == null)
+        {
+            separationScript = gameObject.AddComponent<SeparationBehaviour>();
+        }
+        if (avoidanceScript == null)
+        {
+            avoidanceScript = gameObject.AddComponent<AvoidanceBehaviour>();
+        }
+
 
         CreateNewLeader();
-
     }
 
+        
     protected override void CooperativeArbitration()
     {
         base.CooperativeArbitration();
 
-
         CreateNewLeader();
         UpdateAllBaseTroopsTarget();
+        UpdateCombatStateMachine();
 
-
-        if (allyRole == AllyRole.baseTroop)
+        switch (currentState)
         {
-            // Follow the leader
-            seekScript.Target = AllyAgentGroupManager.leader.transform;
-            seekScript.enabled = true;
+            case AgentState.Combat:
+                CombatState();
+                return;
 
-            // Only use avoidance if necessary
-            avoidScript.enabled = true;
-
-            // Disable wander for baseTroops
-            wanderScript.enabled = false;
+            case AgentState.Normal:
+            default:
+                NormalState();
+                break;
         }
-        else if (allyRole == AllyRole.leader)
-        {
-            // Leader moves around randomly or along path
-            wanderScript.enabled = true;
-            seekScript.enabled = false;
-            avoidScript.enabled = false;
-        }
-
-
-        if (Input.GetKeyDown(KeyCode.Alpha1))
-        {
-            attackType = Attack.AttackType.Melee;
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha2))
-        {
-            attackType = Attack.AttackType.AllyGun;
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha3))
-        {
-            attackType = Attack.AttackType.Rocket;
-        }
-        if (Input.GetKey(KeyCode.Space))
-        {
-            if (attackType == Attack.AttackType.Rocket && GameData.Instance.AllyRocketsAvailable <= 0)
-            {
-                attackType = Attack.AttackType.AllyGun;
-            }
-
-            AttackWith(attackType);
-        }
-        if (Input.GetMouseButtonDown(1))
-        {
-            SteeringVelocity = Vector3.zero;
-            CurrentVelocity = Vector3.zero;
-
               
-        }
     }
 
-    protected override void UpdateDirection()
+    void UpdateCombatStateMachine()
     {
-       // var seekToMouse = GetComponent<SeekToMouse>();
-
-            base.UpdateDirection();
-       
-    }
-    void CreateNewLeader()
-    {
-        // If there is no leader or the leader is inactive
-        if (AllyAgentGroupManager.leader == null || !AllyAgentGroupManager.leader.gameObject.activeInHierarchy)
+      
+        if (currentTarget != null)
         {
-            if (allyRole != AllyRole.leader)
+            float distanceFromEnemy = Vector3.Distance(transform.position, currentTarget.transform.position);
+
+            if (!currentTarget.gameObject.activeInHierarchy ||
+                GameData.Instance.GetAgentHealth(currentTarget) <= 0 ||
+                distanceFromEnemy > detectionRange)   
             {
-                AllyAgentGroupManager.leader = this;
-                allyRole = AllyRole.leader;
-
-
-                // Enable leader behaviors
-                gameObject.AddComponent<SeekToMouse>();
-                wanderScript.enabled = true;
-                seekScript.enabled = false;
-                avoidScript.enabled = false;
+                currentTarget = null;
             }
+        }
+
+
+        if (currentTarget == null)
+        {
+            currentTarget = FindEnemyInDetectionRadius();
+
+        }
+
+        if (currentTarget != null)
+        {
+            currentState = AgentState.Combat;
         }
         else
         {
-            // Only set to baseTroop if you are not the leader
-            if (allyRole != AllyRole.leader)
-            {
-                allyRole = AllyRole.baseTroop;
-                wanderScript.enabled = false;
-                seekScript.enabled = true;
-                avoidScript.enabled = true;
-               
-              
-            }
+            currentState = AgentState.Normal;
         }
+
     }
-    void UpdateAllBaseTroopsTarget()
+    void CombatState()
     {
-        foreach (var ally in AllyAgentGroupManager.allAllies)
+        if (currentTarget == null)
         {
-            if (ally != null && ally != this && ally.allyRole == AllyRole.baseTroop)
-            {
-                ally.seekScript.Target = this.transform;
-            }
+            currentState = AgentState.Normal;
+            return;
+        }
+
+        StopPathing();
+        seekScript.ClearTargetPositionOverride();
+
+        // aim at enemy first enemy in range
+        seekScript.enabled = true;
+        seekScript.Target = currentTarget.transform;
+
+        // stops the allys from seperating in combat relys on avoidance to avoid rockets
+        separationScript.enabled = false;
+     
+
+        AttackWith(basicShoot);
+    }
+
+   
+    void NormalState()
+    {
+        if (allyRole == AllyRole.baseTroop)
+        {
+           
+            seekScript.enabled = true;
+            seekScript.Target = AllyAgentGroupManager.leader.transform;
+
+            separationScript.enabled = true;
+            avoidanceScript.enabled = true;
+
+            return;
+
+        }
+               
+        
+
+        FollowPath();
+
+        if (currentPath == null || currentWaypoint >= currentPath.Count)
+        {
+            PickNewRandomDestination();
         }
     }
 
-}
+   
+    SteeringAgent FindEnemyInDetectionRadius()
+    {
+        foreach (var enemy in GameData.Instance.enemies)
+        {
+            if (enemy == null) continue;
+            if (!enemy.gameObject.activeInHierarchy) continue;
+            if (GameData.Instance.GetAgentHealth(enemy) <= 0) continue;
+
+            float distanceAway = Vector3.Distance(transform.position, enemy.transform.position);
+
+            if (distanceAway <= detectionRange)
+                return enemy;  // first enemy found in detection range
+        }
+
+        return null;
+    }
+    void StopPathing()
+    {
+        currentPath = null;
+        currentWaypoint = 0;
+    }
+
+    void FollowPath()
+    {
+        if (currentPath == null || currentWaypoint >= currentPath.Count)
+            return;
+
+        Vector3 waypointLocation = PathNodeVector(currentPath[currentWaypoint]);
+        seekScript.TargetPositionOverride = waypointLocation;
+
+        float distanceFromWaypoint = Vector3.Distance(transform.position, waypointLocation);
+
+        if (distanceFromWaypoint < 0.75f)
+        {
+           
+            currentWaypoint++;
+        }
+    }
+
+
+    void PickNewRandomDestination()
+    {
+        Map map = GameData.Instance.Map;
+        bool foundValidPath = false;
+        int start = GetStartingVector(transform.position);      // this ally agent position
+
+
+
+        for (int i = 0; i < attemptsAtRandomNode; i++)
+        {
+            int rx = Random.Range(0, Map.MapWidth);    // random Y and X indexes
+            int ry = Random.Range(0, Map.MapHeight);
+
+            if (!map.IsNavigatable(rx, ry))     // moves to nest attempt if not navigable
+                continue;
+                int target = map.MapIndex(rx, ry);
+
+                currentPath = pathfinder.FindPath(start, target);
+                currentWaypoint = 0;
+
+
+                if (currentPath != null && currentPath.Count > 0)
+                {
+                    foundValidPath = true;
+                    break;
+
+                }
+                
+            
+        }
+        if (!foundValidPath)
+        {
+            this.gameObject.SetActive(false);
+            Debug.Log(this.gameObject.name + "Died Couldn't pathe");
+            //Anti pathfinding infinite loop check
+
+        }
+      
+
+    }
+
+    Vector3 PathNodeVector(int index)
+    {
+        int x = GameData.Instance.Map.MapIndexToX(index);
+        int y = GameData.Instance.Map.MapIndexToY(index);
+        return new Vector3(x, y, 0f);
+    }
+
+    int GetStartingVector(Vector3 pos)
+    {
+        int x = Mathf.RoundToInt(pos.x);
+        int y = Mathf.RoundToInt(pos.y);
+        return GameData.Instance.Map.MapIndex(x, y);
+    }
+
+    void CreateNewLeader()
+    {
+        if (AllyAgentGroupManager.leader == null ||
+            !AllyAgentGroupManager.leader.gameObject.activeInHierarchy)
+        {
+            AllyAgentGroupManager.leader = this;        
+            allyRole = AllyRole.leader;
+            seekScript.enabled = true;
+            separationScript.enabled = false;
+            avoidanceScript.enabled = false;
+             
+
+        }
+    }
+
+    void UpdateAllBaseTroopsTarget()
+    {
+
+        Transform leaderTransform = AllyAgentGroupManager.leader.transform;
+
+        foreach (var ally in AllyAgentGroupManager.allAllies)
+        {
+            if (ally.allyRole == AllyRole.baseTroop)
+            {
+                ally.seekScript.Target = leaderTransform; 
+            }
+        }
+    }
+  
+    }

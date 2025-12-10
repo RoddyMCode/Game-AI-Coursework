@@ -1,30 +1,48 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class AvoidanceBehaviour : SteeringBehaviour
 {
-    public float avoidRadius = 1.5f;
-    public float avoidForce = 10f;
+    public float avoidDistance = 1.5f;
+    public float avoidForce = 15f;
+    public float agentAvoidRadius = 1.0f;
+
+    private Map map;
+    
+    private void Awake()
+    {
+        map = GameData.Instance.Map;
+
+    }
 
     public override Vector3 UpdateBehaviour(SteeringAgent agent)
     {
         Vector3 force = Vector3.zero;
+             
+           bool avoiding = false;
 
-        // Avoid other SteeringAgents
-        foreach (var other in FindObjectsOfType<SteeringAgent>())
+
+        foreach (var other in AllyAgentGroupManager.allAllies)
         {
+       
             if (other == agent) continue;
 
-            Vector3 toOther = agent.transform.position - other.transform.position;
-            float dist = toOther.magnitude;
+            Vector3 distanceToOther = agent.transform.position - other.transform.position;
+            float distance = distanceToOther.magnitude;
 
-            if (dist < avoidRadius)
+            if (distance < agentAvoidRadius)
             {
-                force += toOther.normalized * (avoidForce / dist);
+                // closer the agents are to one another increases force to avoid each other
+                force += distanceToOther.normalized * (avoidForce / distance);
+                avoiding = true;
             }
         }
 
-        desiredVelocity = force;
-        steeringVelocity = desiredVelocity;
-        return steeringVelocity;
+       
+        if (!avoiding)
+        {
+            return Vector3.zero;
+        }
+
+        return force;
     }
 }

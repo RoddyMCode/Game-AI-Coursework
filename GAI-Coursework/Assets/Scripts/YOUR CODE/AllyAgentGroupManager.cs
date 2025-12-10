@@ -9,3 +9,4 @@ public static class AllyAgentGroupManager
 
 }
 
+//this holds a list of the active troops on the scene and a leader troop managed by the enum in Ally Agent script
