@@ -4,7 +4,7 @@ public class AvoidanceBehaviour : SteeringBehaviour
 {
     public float avoidDistance = 1.5f;
     public float avoidForce = 15f;
-    public float agentAvoidRadius = 1.0f;
+    public float agentAvoidRadius = 1.2f;
 
     private Map map;
     

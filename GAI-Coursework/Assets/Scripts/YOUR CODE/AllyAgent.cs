@@ -123,6 +123,7 @@ public class AllyAgent : SteeringAgent
     }
     void CombatState()
     {
+      
         if (currentTarget == null)
         {
             currentState = AgentState.Normal;
